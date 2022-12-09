@@ -1,0 +1,368 @@
+---
+title: "Analiza przyczyn stopniowego karłowacenia śledzi oceanicznych wyławianych w Europie"
+author: "Szymon Dziegielewski"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  message = FALSE,
+  warning = FALSE,
+  error = FALSE,
+  echo = FALSE
+)
+set.seed(23)
+```
+
+# Executive summary
+Analiza została przeprowadzona w celu zbadania przyczyn stopniowego karłowacenia śledzi oceanicznych wyławianych w Europie.
+Zbiór danych, który został użyty do poniższej analizy obejmuje pomiary śledzi oraz warunków w jakich żyją na przestrzeni ostatnich 60 lat.
+Dane zostały poddane analizie korelacji w celu sprawdzenia zależności pomiędzy poszczególnymi cechami. Analiza wykazała wpływ temperatury jako główną przycznę.
+
+# Użyte biblioteki
+```{r biblioteki, echo = TRUE}
+library(DT)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(plotly)
+library(ggcorrplot)
+library(caret)
+
+```
+
+```{r funkcje}
+theme_set(theme_bw())
+
+barfill <- "#4271AE"
+barlines <- "#1F3552"
+
+```
+
+# Ładowanie i czyszczenie danych
+
+## Wstęp
+
+Kolumny w zbiorze danych to:
+
+- **length**: długość złowionego śledzia [cm];
+- **cfin1**: dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 1];
+- **cfin2**: dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 2];
+- **chel1**: dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 1];
+- **chel2**: dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 2];
+- **lcop1**: dostępność planktonu [zagęszczenie widłonogów gat. 1];
+- **lcop2**: dostępność planktonu [zagęszczenie widłonogów gat. 2];
+- **fbar**: natężenie połowów w regionie [ułamek pozostawionego narybku];
+- **recr**: roczny narybek [liczba śledzi];
+- **cumf**: łączne roczne natężenie połowów w regionie [ułamek pozostawionego narybku];
+- **totaln**: łączna liczba ryb złowionych w ramach połowu [liczba śledzi];
+- **sst**: temperatura przy powierzchni wody [°C];
+- **sal**: poziom zasolenia wody [Knudsen ppt];
+- **xmonth**: miesiąc połowu [numer miesiąca];
+- **nao**: oscylacja północnoatlantycka [mb].
+
+## Ładowanie danych
+
+```{r import-danych, cache=TRUE, echo=TRUE}
+df.raw <- read.csv("./dane/sledzie.csv", na.strings = "?")
+```
+
+## Obsługa wartości pustych
+
+W zbiorze danych są znaczne braki w wartościach dla kolumn: `cfin1`, `cfin2`, `chel1`, `chel2`, `lcop1`, `lcop2`, `sst`.
+Wartości puste dla poszczególnych kolumn zostały zastąpione średnią wartością dla grupy stworzonej po kolumnach: `xmonth` i `totaln`. W większości przypadków kolumny, w których występowały wartości puste miały taką samą wartość dla podanej grupy.
+
+```{r wartosci-puste, echo=TRUE}
+df <- df.raw %>%
+  group_by(xmonth, totaln) %>%
+  mutate(
+    cfin1 = ifelse(is.na(cfin1), mean(cfin1, na.rm = TRUE), cfin1),
+    cfin2 = ifelse(is.na(cfin2), mean(cfin2, na.rm = TRUE), cfin2),
+    chel1 = ifelse(is.na(chel1), mean(chel1, na.rm = TRUE), chel1),
+    chel2 = ifelse(is.na(chel2), mean(chel2, na.rm = TRUE), chel2),
+    lcop1 = ifelse(is.na(lcop1), mean(lcop1, na.rm = TRUE), lcop1),
+    lcop2 = ifelse(is.na(lcop2), mean(lcop2, na.rm = TRUE), lcop2),
+    sst = ifelse(is.na(sst), mean(sst, na.rm = TRUE), sst)
+  ) %>%
+  ungroup %>%
+  as.data.frame()
+
+df.row <- nrow(df)
+df.col <- ncol(df)
+```
+
+# Podsumowanie danych
+Dane zawierają **`r df.row`** wierszy oraz **`r df.col`** kolumn. Poniżej przedstawione zostało posumowanie poszczególnych kolumn. 
+
+```{r podsumowanie-danych}
+df_summary <- summary(df)
+kable(df_summary[, 1:7])
+kable(df_summary[, 8:14])
+kable(df_summary[, 15:16])
+```
+
+# Analiza danych
+
+## Rozkład wartości kolumn
+### Długość złowionego śledzia [cm]
+
+```{r hist-length}
+
+ggplot(df, aes(x = length)) +
+  geom_histogram(
+    aes(y = ..density..),
+    binwidth = .5,
+    color = barlines,
+    fill = barfill
+  )
+```
+
+### Dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 1]
+
+```{r hist-cfin1}
+
+ggplot(df, aes(x = cfin1)) +
+  geom_histogram(
+    aes(y = ..density..),
+    binwidth = .5,
+    color = barlines,
+    fill = barfill
+  )
+```
+
+### Dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 2]
+
+```{r hist-cfin2}
+
+ggplot(df, aes(x = cfin2)) +
+  geom_histogram(
+    aes(y = ..density..),
+    binwidth = .5,
+    color = barlines,
+    fill = barfill
+  )
+
+```
+
+### Dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 1]
+
+```{r hist-chel1}
+
+ggplot(df, aes(x = chel1)) +
+  geom_histogram(
+    aes(y = ..density..),
+    color = barlines,
+    fill = barfill
+  )
+
+```
+
+### Dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 2]
+
+```{r hist-chel2}
+
+ggplot(df, aes(x = chel2)) +
+  geom_histogram(
+    aes(y = ..density..),
+    color = barlines,
+    fill = barfill
+  )
+```
+
+### Dostępność planktonu [zagęszczenie widłonogów gat. 1]
+
+```{r hist-lcop1}
+
+ggplot(df, aes(x = lcop1)) +
+  geom_histogram(
+    aes(y = ..density..),
+    color = barlines,
+    fill = barfill
+  )
+
+```
+
+### Dostępność planktonu [zagęszczenie widłonogów gat. 2]
+
+```{r hist-lcop2}
+
+ggplot(df, aes(x = lcop2)) +
+  geom_histogram(
+    aes(y = ..density..),
+    color = barlines,
+    fill = barfill
+  )
+
+```
+
+### Natężenie połowów w regionie [ułamek pozostawionego narybku]
+
+```{r hist-fbar}
+
+ggplot(df, aes(x = fbar)) +
+  geom_histogram(
+    aes(y = ..density..),
+    binwidth = .04,
+    color = barlines,
+    fill = barfill
+  )
+
+```
+
+### Roczny narybek [liczba śledzi]
+
+```{r hist-recr}
+
+ggplot(df, aes(x = recr)) +
+  geom_histogram(
+    aes(y = ..density..),
+    color = barlines,
+    fill = barfill
+  )
+```
+
+### Łączne roczne natężenie połowów w regionie [ułamek pozostawionego narybku]
+
+```{r hist-cumf}
+
+ggplot(df, aes(x = cumf)) +
+  geom_histogram(
+    aes(y = ..density..),
+    binwidth = .01,
+    color = barlines,
+    fill = barfill
+  )
+
+```
+
+### Łączna liczba ryb złowionych w ramach połowu [liczba śledzi]
+
+```{r hist-totaln}
+
+ggplot(df, aes(x = totaln)) +
+  geom_histogram(
+    aes(y = ..density..),
+    color = barlines,
+    fill = barfill
+  )
+
+```
+
+### Temperatura przy powierzchni wody [°C]
+
+```{r hist-sst}
+
+ggplot(df, aes(x = sst)) +
+  geom_histogram(
+    aes(y = ..density..),
+    binwidth = .1,
+    color = barlines,
+    fill = barfill
+  )
+
+```
+
+
+### Poziom zasolenia wody [Knudsen ppt]
+
+```{r hist-sal}
+
+ggplot(df, aes(x = sal)) +
+  geom_histogram(
+    aes(y = ..density..),
+    binwidth = .01,
+    color = barlines,
+    fill = barfill
+  )
+```
+
+### Miesiąc połowu [numer miesiąca]
+
+```{r hist-xmonth}
+
+ggplot(df, aes(x = xmonth)) +
+  geom_histogram(
+    aes(y = ..density..),
+    binwidth = .1,
+    color = barlines,
+    fill = barfill
+  )
+
+```
+
+### Oscylacja północnoatlantycka [mb]
+
+```{r hist-nao}
+
+ggplot(df, aes(x = nao)) +
+  geom_histogram(
+    aes(y = ..density..),
+    color = barlines,
+    fill = barfill
+  )
+  
+```
+
+## Długość śledzia w czasie
+
+```{r plot-len}
+df.grouped <- df %>% select(X, recr, xmonth, length) %>%
+  group_by(recr) %>%
+  mutate(year = min(X)) %>%
+  ungroup %>%
+  select(year, xmonth, length) %>%
+  group_by(year, xmonth) %>%
+  summarize(length = (mean(length))) %>%
+  arrange(year, xmonth) %>%
+  distinct %>%
+  ungroup %>%
+  mutate(year = match(year, unique(year))) %>%
+  mutate(year = year + 2022 - 60)
+
+length_plot <-
+  ggplot(df.grouped, aes(x = year, y = length)) + geom_point() + geom_smooth(method ='lm')
+ggplotly(length_plot)
+```
+
+
+## Korelacja zmiennych
+
+```{r korelacja}
+
+ggcorrplot(cor(df))
+  
+```
+
+W przypapadku zmiennej `length` zauważamy silną ujemną korelację z zmienną temperatury `sst`; w mniejszym stopniu z oscylacją północnoatlantycką `nao`.
+Słaba dodatnia korelacja występuje z natężeniem połowów w regionie `fbar`, zagęszczeniem planktonu Calanus helgolandicus gat. 1 `chel1` i zagęszczeniem planktonu widłonogów gat. 1 `lcop1`
+
+# Regresja
+
+
+
+```{r regresja-init, cache=TRUE}
+
+inTraining <- createDataPartition( y = df$length ,p = .75, list = FALSE)
+training <- df[ inTraining,]
+testing  <- df[-inTraining,]
+ctrl <- trainControl(method = "repeatedcv", number = 2, repeats = 5)
+```
+
+```{r regresja, cache=TRUE}
+fit  <- train(length ~ ., data = training, method = "rf", trControl = ctrl, ntree=20)
+fit
+```
+
+## Wyniki modelu
+
+Poniżej znajduje się wykres atrybutów, które w największym stopniu wpływają na karłowacenie się śledzi.
+
+```{r regresja-wynik, echo=FALSE}
+plot(varImp(fit, scale = FALSE), top=10)
+```
+
+Na jego podstawie można wywnioskować, że największą przyczyną karłowacenia się śledzi jest wzrost temperatury `sst`. Kolejne, lecz mniej istotne przyczny to natężenie połowów w regionie `fbar` oraz dostępność planktonu widłonogów `lcop1` i `lcop2`.
